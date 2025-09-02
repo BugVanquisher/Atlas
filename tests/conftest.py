@@ -1,7 +1,7 @@
 import os
 import asyncio
 import pytest
-import fakeredis.aioredis
+import fakeredis
 
 # Force local/fake Redis URL so config never defaults to "redis:6379"
 os.environ["REDIS_URL"] = "redis://localhost:6379/0"
@@ -16,13 +16,14 @@ class DummyRateLimiter:
 
 @pytest.fixture(autouse=True, scope="function")
 async def fake_redis_fixture():
-    fake = fakeredis.aioredis.FakeRedis()
+    fake = fakeredis.FakeAsyncRedis()
     main.redis = fake
     main.quota.redis = fake
     main.rl = DummyRateLimiter()
     yield
     await fake.flushall()
-    await fake.close()
+    await fake.aclose()  # use aclose() for async client
+        
 
 @pytest.fixture(scope="session")
 def event_loop():
