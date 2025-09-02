@@ -1,0 +1,27 @@
+version: "3.9"
+services:
+  redis:
+    image: redis:7
+    ports: ["6379:6379"]
+
+  mock-upstream:
+    build:
+      context: ../examples/mock_upstream
+      dockerfile: Dockerfile
+    ports: ["9000:9000"]
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.gateway
+    environment:
+      - UPSTREAM_BASE_URL=${UPSTREAM_BASE_URL:-http://mock-upstream:9000}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-my-admin-key}
+      - DEFAULT_DAILY_LIMIT=${DEFAULT_DAILY_LIMIT:-100000}
+      - DEFAULT_MONTHLY_LIMIT=${DEFAULT_MONTHLY_LIMIT:-1000000}
+      - DEFAULT_RATE_PER_SEC=${DEFAULT_RATE_PER_SEC:-2.0}
+      - DEFAULT_BURST=${DEFAULT_BURST:-5}
+      - PORT=8080
+    ports: ["8080:8080"]
+    depends_on: [redis, mock-upstream]
