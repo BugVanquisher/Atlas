@@ -60,6 +60,8 @@ Prometheus metrics exposed at /metrics:
 ## 📍 Roadmap
 •	Phase 1 (v0.1.0): Core quota/rate limiting ✅
 
+•	Phase 1.5: Add request criticality support (WIP)
+
 •	Phase 2: Streaming support, pre-reservations, advanced admin ops
 
 •	Phase 3: Traffic forecasting, capacity planning
