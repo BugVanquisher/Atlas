@@ -53,7 +53,7 @@ async def healthz():
 @app.post("/v1/admin/keys")
 async def create_or_update_key(
     payload: dict,
-    x_admin_key: str = Header(None, convert_underscores=False),
+    x_admin_key: str = Header(None),
 ):
     if x_admin_key != settings.ADMIN_API_KEY:
         raise HTTPException(status_code=401, detail="Admin key invalid")
