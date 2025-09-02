@@ -1,4 +1,6 @@
-# atlas_gateway/main.py
+from .logging import setup_logging
+setup_logging()
+
 import json
 import logging
 from contextlib import asynccontextmanager
