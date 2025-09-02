@@ -11,14 +11,9 @@ from redis.asyncio import from_url as redis_from_url
 
 from .auth import extract_api_key
 from .config import settings
-from .metrics import (
-    quota_rejections_total,
-    rate_limit_rejections_total,
-    requests_total,
-    route_name_from_path,
-    setup_metrics,
-    tokens_used_total,
-)
+from .metrics import (quota_rejections_total, rate_limit_rejections_total,
+                      requests_total, route_name_from_path, setup_metrics,
+                      tokens_used_total)
 from .quota import ALLOWED_PRIORITIES, QuotaManager
 from .rate_limit import RateLimiter
 from .vllm_client import UpstreamClient
