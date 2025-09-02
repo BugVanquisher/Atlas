@@ -1,6 +1,6 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from prometheus_fastapi_instrumentator import Instrumentator
 from prometheus_client import Counter
+from prometheus_fastapi_instrumentator import Instrumentator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):

@@ -6,20 +6,20 @@ import json
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Response, HTTPException, Depends, Header
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from redis.asyncio import from_url as redis_from_url
 
+from .auth import extract_api_key
 from .config import settings
 from .metrics import (
-    setup_metrics,
-    requests_total,
-    tokens_used_total,
     quota_rejections_total,
     rate_limit_rejections_total,
+    requests_total,
     route_name_from_path,
+    setup_metrics,
+    tokens_used_total,
 )
-from .auth import extract_api_key
-from .quota import QuotaManager, ALLOWED_PRIORITIES
+from .quota import ALLOWED_PRIORITIES, QuotaManager
 from .rate_limit import RateLimiter
 from .vllm_client import UpstreamClient
 

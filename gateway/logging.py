@@ -1,6 +1,6 @@
+import json
 import logging
 import sys
-import json
 
 
 class JsonFormatter(logging.Formatter):
