@@ -1,49 +1,93 @@
+from typing import Dict, Any
 from redis.asyncio import Redis
 from fastapi import HTTPException
 from .config import settings
 from .utils import ymd_now
 
-LIMITS_KEY = "limits:{api_key}"              # hash: daily_limit, monthly_limit, rate_per_sec, burst
+LIMITS_KEY = "limits:{api_key}"              # hash: daily_limit, monthly_limit, rate_per_sec, burst, priority
 USAGE_D_KEY = "usage:d:{api_key}:{ymd}"     # int counter for daily usage
 USAGE_M_KEY = "usage:m:{api_key}:{ym}"      # int counter for monthly usage
+
+ALLOWED_PRIORITIES = {"low", "normal", "high", "critical"}
+
+
+def _get_str(d: Dict[Any, Any], key: str, default: str | None = None) -> str | None:
+    v = d.get(key)
+    if v is None:
+        v = d.get(key.encode())
+    if isinstance(v, bytes):
+        v = v.decode()
+    return v if v is not None else default
+
+
+def _get_int(d: Dict[Any, Any], key: str, default: int) -> int:
+    s = _get_str(d, key, None)
+    try:
+        return int(s) if s is not None else default
+    except Exception:
+        return default
+
+
+def _get_float(d: Dict[Any, Any], key: str, default: float) -> float:
+    s = _get_str(d, key, None)
+    try:
+        return float(s) if s is not None else default
+    except Exception:
+        return default
+
+
+def _normalize_priority(p: str | None) -> str:
+    if not p:
+        return "normal"
+    p = p.lower().strip()
+    return p if p in ALLOWED_PRIORITIES else "normal"
 
 
 class QuotaManager:
     def __init__(self, redis: Redis):
         self.redis = redis
 
-    async def get_limits(self, api_key: str):
+    async def get_limits(self, api_key: str) -> dict:
         key = LIMITS_KEY.format(api_key=api_key)
         data = await self.redis.hgetall(key)
         if not data:
-            # Defaults if key not configured
             return {
                 "daily_limit": settings.DEFAULT_DAILY_LIMIT,
                 "monthly_limit": settings.DEFAULT_MONTHLY_LIMIT,
                 "rate_per_sec": settings.DEFAULT_RATE_PER_SEC,
                 "burst": settings.DEFAULT_BURST,
+                "priority": "normal",
             }
-
-        def to_int(v, d): return int(v) if v is not None else d
-        def to_float(v, d): return float(v) if v is not None else d
-
         return {
-            "daily_limit": to_int(data.get(b"daily_limit"), settings.DEFAULT_DAILY_LIMIT),
-            "monthly_limit": to_int(data.get(b"monthly_limit"), settings.DEFAULT_MONTHLY_LIMIT),
-            "rate_per_sec": to_float(data.get(b"rate_per_sec"), settings.DEFAULT_RATE_PER_SEC),
-            "burst": to_int(data.get(b"burst"), settings.DEFAULT_BURST),
+            "daily_limit": _get_int(data, "daily_limit", settings.DEFAULT_DAILY_LIMIT),
+            "monthly_limit": _get_int(data, "monthly_limit", settings.DEFAULT_MONTHLY_LIMIT),
+            "rate_per_sec": _get_float(data, "rate_per_sec", settings.DEFAULT_RATE_PER_SEC),
+            "burst": _get_int(data, "burst", settings.DEFAULT_BURST),
+            "priority": _normalize_priority(_get_str(data, "priority", "normal")),
         }
 
-    async def set_limits(self, api_key: str, daily: int, monthly: int, rate_per_sec: float, burst: int):
+    async def set_limits(
+        self,
+        api_key: str,
+        daily: int,
+        monthly: int,
+        rate_per_sec: float,
+        burst: int,
+        priority: str = "normal",
+    ):
         key = LIMITS_KEY.format(api_key=api_key)
-        await self.redis.hset(key, mapping={
-            "daily_limit": daily,
-            "monthly_limit": monthly,
-            "rate_per_sec": rate_per_sec,
-            "burst": burst,
-        })
+        await self.redis.hset(
+            key,
+            mapping={
+                "daily_limit": daily,
+                "monthly_limit": monthly,
+                "rate_per_sec": rate_per_sec,
+                "burst": burst,
+                "priority": _normalize_priority(priority),
+            },
+        )
 
-    async def get_usage(self, api_key: str):
+    async def get_usage(self, api_key: str) -> tuple[int, int]:
         ymd, ym = ymd_now()
         d = await self.redis.get(USAGE_D_KEY.format(api_key=api_key, ymd=ymd))
         m = await self.redis.get(USAGE_M_KEY.format(api_key=api_key, ym=ym))
