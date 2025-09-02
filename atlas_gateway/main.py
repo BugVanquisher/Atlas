@@ -1,4 +1,5 @@
 import json
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response, HTTPException, Depends
 from redis.asyncio import from_url as redis_from_url
 from .config import settings
@@ -8,20 +9,21 @@ from .quota import QuotaManager
 from .rate_limit import RateLimiter
 from .vllm_client import UpstreamClient
 
-app = FastAPI(title="Atlas Gateway", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # startup
+    yield
+    # shutdown
+    await upstream.close()
+    await redis.aclose()
+
+app = FastAPI(title="Atlas Gateway", version="0.1.0", lifespan=lifespan)
 setup_metrics(app)
 
 redis = redis_from_url(settings.REDIS_URL, decode_responses=False)
 quota = QuotaManager(redis)
 rl = RateLimiter(redis)
 upstream = UpstreamClient()
-
-
-@app.on_event("shutdown")
-async def _shutdown():
-    await upstream.close()
-    await redis.aclose()
-
 
 @app.get("/healthz")
 async def healthz():
