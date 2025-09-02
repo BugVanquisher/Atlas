@@ -1,3 +1,5 @@
+[![GitHub release](https://img.shields.io/github/v/release/BugVanquisher/Atlas)](https://github.com/BugVanquisher/Atlas/releases)
+
 # Atlas
 
 **Atlas** is a traffic governance and quota management gateway for LLM inference (vLLM, OpenAI API compatible).  
