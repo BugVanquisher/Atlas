@@ -1,6 +1,6 @@
 import pytest
 from httpx import AsyncClient
-from atlas_gateway.main import app
+from gateway.main import app
 
 @pytest.mark.asyncio
 async def test_usage_endpoint():

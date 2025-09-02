@@ -2,3 +2,4 @@
 .DS_Store
 /atlas_gateway/__pycache__
 /tests/__pycache__
+/gateway/__pycache__
