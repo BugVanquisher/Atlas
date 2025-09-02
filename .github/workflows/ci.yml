@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: [ "3.11" ]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio flake8 black isort
+
+      - name: Lint with flake8
+        run: |
+          # fail on syntax errors or undefined names
+          flake8 atlas_gateway forecasting examples --count --select=E9,F63,F7,F82 --show-source --statistics
+          # exit-zero treats all errors as warnings
+          flake8 atlas_gateway forecasting examples --count --exit-zero --max-complexity=10 --max-line-length=100 --statistics
+
+      - name: Check formatting with black
+        run: black --check atlas_gateway forecasting examples
+
+      - name: Check imports with isort
+        run: isort --check-only atlas_gateway forecasting examples
+
+      - name: Run tests with pytest
+        run: pytest -q --disable-warnings --maxfail=1
