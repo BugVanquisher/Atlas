@@ -10,8 +10,11 @@ class UpstreamClient:
         await self.client.aclose()
 
     async def forward(self, method: str, path: str, headers: dict, body: bytes | None):
-        upstream_headers = {k: v for k, v in headers.items()
-                            if k.lower() not in {"host", "content-length"}}
+        upstream_headers = {
+            k: v
+            for k, v in headers.items()
+            if k.lower() not in {"host", "content-length"}
+        }
         r = await self.client.request(
             method, f"/v1/{path}", headers=upstream_headers, content=body
         )

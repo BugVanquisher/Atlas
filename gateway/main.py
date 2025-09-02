@@ -1,4 +1,5 @@
 from .logging import setup_logging
+
 setup_logging()
 
 import json
@@ -42,7 +43,9 @@ async def lifespan(app: FastAPI):
     await redis.aclose()
 
 
-app.router.lifespan_context = lifespan  # use FastAPI lifespan (avoids deprecation warning)
+app.router.lifespan_context = (
+    lifespan  # use FastAPI lifespan (avoids deprecation warning)
+)
 
 
 @app.get("/healthz")
@@ -68,7 +71,10 @@ async def create_or_update_key(
     burst = int(payload.get("burst", settings.DEFAULT_BURST))
     priority = str(payload.get("priority", "normal")).lower()
     if priority not in ALLOWED_PRIORITIES:
-        raise HTTPException(status_code=400, detail=f"priority must be one of {sorted(ALLOWED_PRIORITIES)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"priority must be one of {sorted(ALLOWED_PRIORITIES)}",
+        )
 
     await quota.set_limits(api_key, daily, monthly, rate, burst, priority)
 
@@ -106,12 +112,16 @@ async def proxy(
     limits = await quota.get_limits(api_key)
 
     # Priority: header override if provided; else use key default
-    req_priority = request.headers.get("x-request-priority", limits.get("priority", "normal")).lower()
+    req_priority = request.headers.get(
+        "x-request-priority", limits.get("priority", "normal")
+    ).lower()
     if req_priority not in ALLOWED_PRIORITIES:
         req_priority = limits.get("priority", "normal")
 
     route_name = route_name_from_path(full_path)
-    requests_total.labels(api_key=api_key, priority=req_priority, route=route_name).inc()
+    requests_total.labels(
+        api_key=api_key, priority=req_priority, route=route_name
+    ).inc()
 
     # Rate limiting
     allowed = await rl.allow(api_key, limits["rate_per_sec"], limits["burst"])
@@ -121,7 +131,9 @@ async def proxy(
 
     # Forward upstream
     body = await request.body()
-    upstream_resp = await upstream.forward(request.method, full_path, dict(request.headers), body)
+    upstream_resp = await upstream.forward(
+        request.method, full_path, dict(request.headers), body
+    )
     raw = upstream_resp.content
 
     # Token usage (if present)
@@ -136,15 +148,23 @@ async def proxy(
 
     # Quota enforcement happens after upstream reply; record tokens metric
     if actual_tokens > 0:
-        tokens_used_total.labels(api_key=api_key, priority=req_priority).inc(actual_tokens)
+        tokens_used_total.labels(api_key=api_key, priority=req_priority).inc(
+            actual_tokens
+        )
 
     try:
         if actual_tokens > 0:
             await quota.enforce_after_response_or_raise(api_key, actual_tokens, limits)
     except HTTPException as e:
         # Distinguish daily vs monthly for metrics
-        scope = "daily" if "Daily" in str(e.detail) else ("monthly" if "Monthly" in str(e.detail) else "unknown")
-        quota_rejections_total.labels(api_key=api_key, priority=req_priority, scope=scope).inc()
+        scope = (
+            "daily"
+            if "Daily" in str(e.detail)
+            else ("monthly" if "Monthly" in str(e.detail) else "unknown")
+        )
+        quota_rejections_total.labels(
+            api_key=api_key, priority=req_priority, scope=scope
+        ).inc()
         raise
 
     return Response(

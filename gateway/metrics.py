@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
+
 # Per-request counters, split by API key and priority.
 requests_total = Counter(
     "atlas_requests_total",
@@ -45,6 +46,7 @@ rate_limit_rejections_total = Counter(
     ["api_key", "priority"],
 )
 
+
 def setup_metrics(app):
     Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
@@ -57,6 +59,5 @@ def route_name_from_path(full_path: str) -> str:
         return "chat_completions"
     return "other"
 
+
 settings = Settings()
-
-

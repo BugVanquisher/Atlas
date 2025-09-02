@@ -29,6 +29,7 @@ redis.call('EXPIRE', key, math.ceil((capacity / rate) * 2))
 return allowed
 """
 
+
 class RateLimiter:
     def __init__(self, redis: Redis):
         self.redis = redis
