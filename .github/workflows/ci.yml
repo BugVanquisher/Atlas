@@ -32,15 +32,15 @@ jobs:
       - name: Lint with flake8
         run: |
           # fail on syntax errors or undefined names
-          flake8 atlas_gateway forecasting examples --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 gateway forecasting examples --count --select=E9,F63,F7,F82 --show-source --statistics
           # exit-zero treats all errors as warnings
-          flake8 atlas_gateway forecasting examples --count --exit-zero --max-complexity=10 --max-line-length=100 --statistics
+          flake8 gateway forecasting examples --count --exit-zero --max-complexity=10 --max-line-length=100 --statistics
 
       - name: Check formatting with black
-        run: black --check atlas_gateway forecasting examples
+        run: black --check gateway forecasting examples
 
       - name: Check imports with isort
-        run: isort --check-only atlas_gateway forecasting examples
+        run: isort --check-only gateway forecasting examples
 
       - name: Run tests with pytest
         run: pytest -q --disable-warnings --maxfail=1
