@@ -6,7 +6,7 @@ import fakeredis.aioredis
 # Force local/fake Redis URL so config never defaults to "redis:6379"
 os.environ["REDIS_URL"] = "redis://localhost:6379/0"
 
-import atlas_gateway.main as main
+import gateway.main as main
 
 
 class DummyRateLimiter:
