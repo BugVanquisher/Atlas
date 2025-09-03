@@ -4,6 +4,7 @@ setup_logging()
 
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
@@ -23,16 +24,15 @@ from .quota import ALLOWED_PRIORITIES, QuotaManager
 from .rate_limit import RateLimiter
 from .vllm_client import UpstreamClient
 
-import os
-from .config import settings
-
 USE_FAKEREDIS = os.getenv("USE_FAKEREDIS", "0") == "1"
 
 if USE_FAKEREDIS:
     import fakeredis
+
     redis = fakeredis.FakeAsyncRedis()
 else:
     from redis.asyncio import from_url as redis_from_url
+
     redis = redis_from_url(settings.REDIS_URL, decode_responses=False)
 
 logger = logging.getLogger(__name__)
