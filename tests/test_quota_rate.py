@@ -12,12 +12,20 @@ async def test_admin_set_get_limits():
         "monthly_limit": 500000,
         "rate_per_sec": 10.0,
         "burst": 20,
+        "priority": "high",
     }
 
     async with AsyncClient(app=app, base_url="http://test") as ac:
         response = await ac.post("/v1/admin/keys", json=payload, headers=headers)
         assert response.status_code == 200
-        assert response.json() == {"ok": True, "api_key": api_key}
+        data = response.json()
+        assert data["ok"] is True
+        assert data["api_key"] == api_key
+        assert data["daily_limit"] == 50000
+        assert data["monthly_limit"] == 500000
+        assert data["rate_per_sec"] == 10.0
+        assert data["burst"] == 20
+        assert data["priority"] == "high"
 
         # Verify that the limits are set correctly
         response = await ac.get(f"/v1/usage", headers={"Authorization": f"Bearer {api_key}"})
