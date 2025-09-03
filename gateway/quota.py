@@ -1,10 +1,12 @@
 from typing import Any, Dict
 
 from fastapi import HTTPException
-from redis.asyncio import Redis
+from redis.asyncio import Redis, from_url as redis_from_url
 
 from .config import settings
 from .utils import ymd_now
+
+from typing import Optional
 
 LIMITS_KEY = "limits:{api_key}"  # hash: daily_limit, monthly_limit, rate_per_sec, burst, priority
 USAGE_D_KEY = "usage:d:{api_key}:{ymd}"  # int counter for daily usage
@@ -46,8 +48,11 @@ def _normalize_priority(p: str | None) -> str:
 
 
 class QuotaManager:
-    def __init__(self, redis: Redis):
-        self.redis = redis
+    def __init__(self, redis: Optional[Redis] = None):
+        if redis is None:
+            self.redis = redis_from_url(settings.REDIS_URL, decode_responses=False)
+        else:
+            self.redis = redis
 
     async def get_limits(self, api_key: str) -> dict:
         key = LIMITS_KEY.format(api_key=api_key)

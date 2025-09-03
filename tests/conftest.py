@@ -4,9 +4,11 @@ import pytest
 import fakeredis
 
 # Force local/fake Redis URL so config never defaults to "redis:6379"
-os.environ["REDIS_URL"] = "redis://localhost:6379/0"
+# os.environ["REDIS_URL"] = "redis://localhost:6379/0"
 
 import gateway.main as main
+from gateway.quota import QuotaManager
+
 
 
 class DummyRateLimiter:
@@ -18,7 +20,7 @@ class DummyRateLimiter:
 async def fake_redis_fixture():
     fake = fakeredis.FakeAsyncRedis()
     main.redis = fake
-    main.quota.redis = fake
+    main.quota = QuotaManager(fake)
     main.rl = DummyRateLimiter()
     yield
     await fake.flushall()
