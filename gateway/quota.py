@@ -1,12 +1,11 @@
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
-from redis.asyncio import Redis, from_url as redis_from_url
+from redis.asyncio import Redis
+from redis.asyncio import from_url as redis_from_url
 
 from .config import settings
 from .utils import ymd_now
-
-from typing import Optional
 
 LIMITS_KEY = "limits:{api_key}"  # hash: daily_limit, monthly_limit, rate_per_sec, burst, priority
 USAGE_D_KEY = "usage:d:{api_key}:{ymd}"  # int counter for daily usage
