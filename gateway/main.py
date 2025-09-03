@@ -23,12 +23,23 @@ from .quota import ALLOWED_PRIORITIES, QuotaManager
 from .rate_limit import RateLimiter
 from .vllm_client import UpstreamClient
 
+import os
+from .config import settings
+
+USE_FAKEREDIS = os.getenv("USE_FAKEREDIS", "0") == "1"
+
+if USE_FAKEREDIS:
+    import fakeredis
+    redis = fakeredis.FakeAsyncRedis()
+else:
+    from redis.asyncio import from_url as redis_from_url
+    redis = redis_from_url(settings.REDIS_URL, decode_responses=False)
+
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Atlas Gateway", version="0.1.0")
 setup_metrics(app)
 
-redis = redis_from_url(settings.REDIS_URL, decode_responses=False)
 quota = QuotaManager(redis)
 rl = RateLimiter(redis)
 upstream = UpstreamClient()
