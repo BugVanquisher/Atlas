@@ -10,9 +10,10 @@ Usage:
 
 import argparse
 import asyncio
-import httpx
 import random
 import time
+
+import httpx
 
 
 async def worker(idx: int, url: str, api_key: str, results: list):

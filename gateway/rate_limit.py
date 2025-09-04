@@ -1,4 +1,5 @@
 import time
+
 from redis.asyncio import Redis
 
 # Lua script for token bucket
@@ -28,6 +29,7 @@ redis.call('EXPIRE', key, math.ceil((capacity / rate) * 2))
 
 return allowed
 """
+
 
 class RateLimiter:
     def __init__(self, redis: Redis):

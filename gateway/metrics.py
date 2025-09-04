@@ -1,6 +1,6 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from prometheus_fastapi_instrumentator import Instrumentator
 from prometheus_client import Counter
+from prometheus_fastapi_instrumentator import Instrumentator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     PORT: int = 8080
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
+
 
 # Per-request counters, split by API key and priority.
 requests_total = Counter(
@@ -45,6 +46,7 @@ rate_limit_rejections_total = Counter(
     ["api_key", "priority"],
 )
 
+
 def setup_metrics(app):
     Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
@@ -57,6 +59,5 @@ def route_name_from_path(full_path: str) -> str:
         return "chat_completions"
     return "other"
 
+
 settings = Settings()
-
-

@@ -1,34 +1,46 @@
 from .logging import setup_logging
+
 setup_logging()
 
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Response, HTTPException, Depends, Header
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from redis.asyncio import from_url as redis_from_url
 from starlette.responses import StreamingResponse
 
+from .auth import extract_api_key
 from .config import settings
 from .metrics import (
-    setup_metrics,
-    requests_total,
-    tokens_used_total,
     quota_rejections_total,
     rate_limit_rejections_total,
+    requests_total,
     route_name_from_path,
+    setup_metrics,
+    tokens_used_total,
 )
-from .auth import extract_api_key
-from .quota import QuotaManager, ALLOWED_PRIORITIES
+from .quota import ALLOWED_PRIORITIES, QuotaManager
 from .rate_limit import RateLimiter
 from .vllm_client import UpstreamClient
+
+USE_FAKEREDIS = os.getenv("USE_FAKEREDIS", "0") == "1"
+
+if USE_FAKEREDIS:
+    import fakeredis
+
+    redis = fakeredis.FakeAsyncRedis()
+else:
+    from redis.asyncio import from_url as redis_from_url
+
+    redis = redis_from_url(settings.REDIS_URL, decode_responses=False)
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Atlas Gateway", version="0.1.0")
 setup_metrics(app)
 
-redis = redis_from_url(settings.REDIS_URL, decode_responses=False)
 quota = QuotaManager(redis)
 rl = RateLimiter(redis)
 upstream = UpstreamClient()
@@ -43,7 +55,9 @@ async def lifespan(app: FastAPI):
     await redis.aclose()
 
 
-app.router.lifespan_context = lifespan  # use FastAPI lifespan (avoids deprecation warning)
+app.router.lifespan_context = (
+    lifespan  # use FastAPI lifespan (avoids deprecation warning)
+)
 
 
 @app.get("/healthz")
@@ -69,7 +83,10 @@ async def create_or_update_key(
     burst = int(payload.get("burst", settings.DEFAULT_BURST))
     priority = str(payload.get("priority", "normal")).lower()
     if priority not in ALLOWED_PRIORITIES:
-        raise HTTPException(status_code=400, detail=f"priority must be one of {sorted(ALLOWED_PRIORITIES)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"priority must be one of {sorted(ALLOWED_PRIORITIES)}",
+        )
 
     await quota.set_limits(api_key, daily, monthly, rate, burst, priority)
 
@@ -106,12 +123,17 @@ async def proxy(
     limits = await quota.get_limits(api_key)
     logger.info("incoming request")
 
-    req_priority = request.headers.get("x-request-priority", limits.get("priority", "normal")).lower()
+    # Priority: header override if provided; else use key default
+    req_priority = request.headers.get(
+        "x-request-priority", limits.get("priority", "normal")
+    ).lower()
     if req_priority not in ALLOWED_PRIORITIES:
         req_priority = limits.get("priority", "normal")
 
     route_name = route_name_from_path(full_path)
-    requests_total.labels(api_key=api_key, priority=req_priority, route=route_name).inc()
+    requests_total.labels(
+        api_key=api_key, priority=req_priority, route=route_name
+    ).inc()
 
     allowed = await rl.allow(api_key, limits["rate_per_sec"], limits["burst"])
     if not allowed:
@@ -171,6 +193,7 @@ async def proxy(
 
     # --- Non-stream (existing path) ---
     upstream_resp = await upstream.forward(request.method, full_path, dict(request.headers), body_bytes)
+
     raw = upstream_resp.content
 
     # Token usage (if present)
@@ -185,15 +208,23 @@ async def proxy(
 
     # Quota enforcement happens after upstream reply; record tokens metric
     if actual_tokens > 0:
-        tokens_used_total.labels(api_key=api_key, priority=req_priority).inc(actual_tokens)
+        tokens_used_total.labels(api_key=api_key, priority=req_priority).inc(
+            actual_tokens
+        )
 
     try:
         if actual_tokens > 0:
             await quota.enforce_after_response_or_raise(api_key, actual_tokens, limits)
     except HTTPException as e:
         # Distinguish daily vs monthly for metrics
-        scope = "daily" if "Daily" in str(e.detail) else ("monthly" if "Monthly" in str(e.detail) else "unknown")
-        quota_rejections_total.labels(api_key=api_key, priority=req_priority, scope=scope).inc()
+        scope = (
+            "daily"
+            if "Daily" in str(e.detail)
+            else ("monthly" if "Monthly" in str(e.detail) else "unknown")
+        )
+        quota_rejections_total.labels(
+            api_key=api_key, priority=req_priority, scope=scope
+        ).inc()
         raise
 
     return Response(
