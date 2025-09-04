@@ -25,7 +25,7 @@ async def test_admin_set_get_limits():
         assert data["monthly_limit"] == 500000
         assert data["rate_per_sec"] == 10.0
         assert data["burst"] == 20
-        assert data["priority"] == "normal"
+        assert data["priority"] == "high"
 
         # Verify that the limits are set correctly
         response = await ac.get(f"/v1/usage", headers={"Authorization": f"Bearer {api_key}"})
