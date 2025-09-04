@@ -12,6 +12,7 @@ async def test_admin_set_get_limits():
         "monthly_limit": 500000,
         "rate_per_sec": 10.0,
         "burst": 20,
+        "priority": "high",
     }
 
     async with AsyncClient(app=app, base_url="http://test") as ac:
