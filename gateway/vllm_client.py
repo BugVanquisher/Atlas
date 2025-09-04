@@ -22,8 +22,10 @@ class UpstreamClient:
             method, f"/v1/{path}", headers=upstream_headers, content=body
         )
         return r
-    
+
     @asynccontextmanager
     async def stream(self, method: str, path: str, headers: dict, body: bytes):
-        async with self.client.stream(method, path, headers=headers, content=body) as resp:
+        async with self.client.stream(
+            method, path, headers=headers, content=body
+        ) as resp:
             yield resp

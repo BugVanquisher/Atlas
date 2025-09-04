@@ -152,16 +152,26 @@ async def proxy(
     logger.info(f"is_stream={is_stream}")
     # --- Streaming ---
     if is_stream:
-        reservation = int(payload.get("max_tokens") or settings.DEFAULT_STREAM_RESERVATION or 0)
+        reservation = int(
+            payload.get("max_tokens") or settings.DEFAULT_STREAM_RESERVATION or 0
+        )
 
         if reservation > 0:
             used_d, used_m = await quota.get_usage(api_key)
             if used_d + reservation > limits["daily_limit"]:
-                quota_rejections_total.labels(api_key=api_key, priority=req_priority, scope="daily").inc()
-                raise HTTPException(status_code=429, detail="Daily quota would be exceeded")
+                quota_rejections_total.labels(
+                    api_key=api_key, priority=req_priority, scope="daily"
+                ).inc()
+                raise HTTPException(
+                    status_code=429, detail="Daily quota would be exceeded"
+                )
             if used_m + reservation > limits["monthly_limit"]:
-                quota_rejections_total.labels(api_key=api_key, priority=req_priority, scope="monthly").inc()
-                raise HTTPException(status_code=429, detail="Monthly quota would be exceeded")
+                quota_rejections_total.labels(
+                    api_key=api_key, priority=req_priority, scope="monthly"
+                ).inc()
+                raise HTTPException(
+                    status_code=429, detail="Monthly quota would be exceeded"
+                )
 
         if payload is not None and "stream" not in payload:
             payload["stream"] = True
@@ -170,14 +180,18 @@ async def proxy(
         async def iter_stream():
             status_ok = False
             try:
-                async with upstream.stream(request.method, full_path, dict(request.headers), body_bytes) as resp:
+                async with upstream.stream(
+                    request.method, full_path, dict(request.headers), body_bytes
+                ) as resp:
                     async for chunk in resp.aiter_raw():
                         if chunk:
                             yield chunk
-                    status_ok = (200 <= resp.status_code < 300)
+                    status_ok = 200 <= resp.status_code < 300
             finally:
                 if reservation > 0 and status_ok:
-                    tokens_used_total.labels(api_key=api_key, priority=req_priority).inc(reservation)
+                    tokens_used_total.labels(
+                        api_key=api_key, priority=req_priority
+                    ).inc(reservation)
                     await quota.add_tokens(api_key, reservation)
 
         return StreamingResponse(
@@ -192,7 +206,9 @@ async def proxy(
         )
 
     # --- Non-stream (existing path) ---
-    upstream_resp = await upstream.forward(request.method, full_path, dict(request.headers), body_bytes)
+    upstream_resp = await upstream.forward(
+        request.method, full_path, dict(request.headers), body_bytes
+    )
 
     raw = upstream_resp.content
 
