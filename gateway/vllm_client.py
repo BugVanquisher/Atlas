@@ -1,7 +1,8 @@
+from contextlib import asynccontextmanager
+
 import httpx
 
 from .config import settings
-from contextlib import asynccontextmanager
 
 
 class UpstreamClient:

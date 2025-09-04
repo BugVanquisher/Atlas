@@ -7,9 +7,11 @@ Run with:
 
 import asyncio
 import json
-from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse, JSONResponse
 import logging
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, StreamingResponse
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
