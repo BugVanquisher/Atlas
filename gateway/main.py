@@ -146,7 +146,6 @@ async def proxy(
             body_bytes = json.dumps(payload).encode("utf-8")
 
         async def iter_stream():
-            nonlocal reservation
             status_ok = False
             try:
                 async with upstream.stream(request.method, full_path, dict(request.headers), body_bytes) as resp:
