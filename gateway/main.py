@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response, HTTPException, Depends, Header
 from redis.asyncio import from_url as redis_from_url
+from starlette.responses import StreamingResponse
 
 from .config import settings
 from .metrics import (
@@ -102,10 +103,9 @@ async def proxy(
     request: Request,
     api_key: str = Depends(extract_api_key),
 ):
-    # Load limits (includes default priority)
     limits = await quota.get_limits(api_key)
+    logger.info("incoming request")
 
-    # Priority: header override if provided; else use key default
     req_priority = request.headers.get("x-request-priority", limits.get("priority", "normal")).lower()
     if req_priority not in ALLOWED_PRIORITIES:
         req_priority = limits.get("priority", "normal")
@@ -113,15 +113,65 @@ async def proxy(
     route_name = route_name_from_path(full_path)
     requests_total.labels(api_key=api_key, priority=req_priority, route=route_name).inc()
 
-    # Rate limiting
     allowed = await rl.allow(api_key, limits["rate_per_sec"], limits["burst"])
     if not allowed:
         rate_limit_rejections_total.labels(api_key=api_key, priority=req_priority).inc()
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
 
-    # Forward upstream
-    body = await request.body()
-    upstream_resp = await upstream.forward(request.method, full_path, dict(request.headers), body)
+    payload = None
+    body_bytes = await request.body()
+    if request.headers.get("content-type", "").startswith("application/json"):
+        try:
+            payload = json.loads(body_bytes) if body_bytes else {}
+        except Exception:
+            payload = {}
+
+    is_stream = bool(payload and payload.get("stream") is True)
+    logger.info(f"is_stream={is_stream}")
+    # --- Streaming ---
+    if is_stream:
+        reservation = int(payload.get("max_tokens") or settings.DEFAULT_STREAM_RESERVATION or 0)
+
+        if reservation > 0:
+            used_d, used_m = await quota.get_usage(api_key)
+            if used_d + reservation > limits["daily_limit"]:
+                quota_rejections_total.labels(api_key=api_key, priority=req_priority, scope="daily").inc()
+                raise HTTPException(status_code=429, detail="Daily quota would be exceeded")
+            if used_m + reservation > limits["monthly_limit"]:
+                quota_rejections_total.labels(api_key=api_key, priority=req_priority, scope="monthly").inc()
+                raise HTTPException(status_code=429, detail="Monthly quota would be exceeded")
+
+        if payload is not None and "stream" not in payload:
+            payload["stream"] = True
+            body_bytes = json.dumps(payload).encode("utf-8")
+
+        async def iter_stream():
+            nonlocal reservation
+            status_ok = False
+            try:
+                async with upstream.stream(request.method, full_path, dict(request.headers), body_bytes) as resp:
+                    async for chunk in resp.aiter_raw():
+                        if chunk:
+                            yield chunk
+                    status_ok = (200 <= resp.status_code < 300)
+            finally:
+                if reservation > 0 and status_ok:
+                    tokens_used_total.labels(api_key=api_key, priority=req_priority).inc(reservation)
+                    await quota.add_tokens(api_key, reservation)
+
+        return StreamingResponse(
+            iter_stream(),
+            status_code=200,
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    # --- Non-stream (existing path) ---
+    upstream_resp = await upstream.forward(request.method, full_path, dict(request.headers), body_bytes)
     raw = upstream_resp.content
 
     # Token usage (if present)
