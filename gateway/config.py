@@ -33,6 +33,8 @@ class Settings(BaseSettings):
 
     PORT: int = 8080
 
+    DEFAULT_STREAM_RESERVATION: int = 256  # tokens to pre-authorize for stream requests
+
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
 
