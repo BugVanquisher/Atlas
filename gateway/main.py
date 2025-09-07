@@ -1,18 +1,14 @@
-from .logging import setup_logging
-
-setup_logging()
-
 import json
 import logging
 import os
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
-from redis.asyncio import from_url as redis_from_url
 from starlette.responses import StreamingResponse
 
 from .auth import extract_api_key
 from .config import settings
+from .logging import setup_logging
 from .metrics import (
     quota_rejections_total,
     rate_limit_rejections_total,
@@ -24,6 +20,11 @@ from .metrics import (
 from .quota import ALLOWED_PRIORITIES, QuotaManager
 from .rate_limit import RateLimiter
 from .vllm_client import UpstreamClient
+
+setup_logging()
+
+X_ADMIN_HEADER = Header(None)
+API_KEY_DEP = Depends(extract_api_key)
 
 USE_FAKEREDIS = os.getenv("USE_FAKEREDIS", "0") == "1"
 
@@ -66,7 +67,7 @@ async def healthz():
 @app.post("/v1/admin/keys")
 async def create_or_update_key(
     payload: dict,
-    x_admin_key: str = Header(None),
+    x_admin_key: str = X_ADMIN_HEADER,
 ):
     if x_admin_key != settings.ADMIN_API_KEY:
         raise HTTPException(status_code=401, detail="Admin key invalid")
@@ -100,7 +101,7 @@ async def create_or_update_key(
 
 
 @app.get("/v1/usage")
-async def get_usage(api_key: str = Depends(extract_api_key)):
+async def get_usage(api_key: str = API_KEY_DEP):
     used_d, used_m = await quota.get_usage(api_key)
     limits = await quota.get_limits(api_key)
     return {
@@ -116,7 +117,7 @@ async def get_usage(api_key: str = Depends(extract_api_key)):
 async def proxy(
     full_path: str,
     request: Request,
-    api_key: str = Depends(extract_api_key),
+    api_key: str = API_KEY_DEP,
 ):
     limits = await quota.get_limits(api_key)
     logger.info("incoming request")
@@ -179,7 +180,8 @@ async def proxy(
                     if reservation > 0:
                         await quota.refund_tokens(api_key, reservation)
                     raise HTTPException(
-                        status_code=resp.status_code, detail=f"Upstream error: {resp.status_code}"
+                        status_code=resp.status_code,
+                        detail=f"Upstream error: {resp.status_code}",
                     )
 
                 # Try to get the first chunk to detect immediate failures

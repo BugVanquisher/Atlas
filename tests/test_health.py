@@ -1,6 +1,8 @@
 import pytest
 from httpx import AsyncClient
+
 from gateway.main import app
+
 
 @pytest.mark.asyncio
 async def test_healthz():

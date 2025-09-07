@@ -1,6 +1,8 @@
 import pytest
 from httpx import AsyncClient
+
 from gateway.main import app
+
 
 @pytest.mark.asyncio
 async def test_usage_endpoint():
@@ -10,7 +12,6 @@ async def test_usage_endpoint():
         admin_headers = {"x-admin-key": "my-admin-key"}
         limits_payload = {"api_key": api_key, "daily_limit": 12345}
         await ac.post("/v1/admin/keys", json=limits_payload, headers=admin_headers)
-
 
         headers = {"Authorization": f"Bearer {api_key}"}
         response = await ac.get("/v1/usage", headers=headers)

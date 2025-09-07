@@ -43,7 +43,5 @@ class RateLimiter:
     async def allow(self, key: str, rate_per_sec: float, burst: int) -> bool:
         await self._ensure_script()
         now = int(time.time())
-        res = await self.redis.evalsha(
-            self._sha, 1, f"rl:{key}", rate_per_sec, burst, now, 1
-        )
+        res = await self.redis.evalsha(self._sha, 1, f"rl:{key}", rate_per_sec, burst, now, 1)
         return res == 1

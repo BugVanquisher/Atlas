@@ -1,14 +1,13 @@
-import os
 import asyncio
-import pytest
-import fakeredis
 
-# Force local/fake Redis URL so config never defaults to "redis:6379"
-# os.environ["REDIS_URL"] = "redis://localhost:6379/0"
+import fakeredis
+import pytest
 
 import gateway.main as main
 from gateway.quota import QuotaManager
 
+# Force local/fake Redis URL so config never defaults to "redis:6379"
+# os.environ["REDIS_URL"] = "redis://localhost:6379/0"
 
 
 class DummyRateLimiter:
@@ -25,7 +24,7 @@ async def fake_redis_fixture():
     yield
     await fake.flushall()
     await fake.aclose()  # use aclose() for async client
-        
+
 
 @pytest.fixture(scope="session")
 def event_loop():
@@ -37,6 +36,7 @@ def event_loop():
         task.cancel()
     loop.run_until_complete(loop.shutdown_asyncgens())
     loop.close()
+
 
 def pytest_sessionfinish(session, exitstatus):
     try:

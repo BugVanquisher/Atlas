@@ -1,9 +1,12 @@
 from fastapi import Header, HTTPException
 
+AUTH_HEADER = Header(default=None)
+API_KEY_HEADER = Header(default=None)
+
 
 async def extract_api_key(
-    authorization: str | None = Header(default=None),
-    x_api_key: str | None = Header(default=None),
+    authorization: str | None = AUTH_HEADER,
+    x_api_key: str | None = API_KEY_HEADER,
 ) -> str:
     if x_api_key:
         return x_api_key.strip()

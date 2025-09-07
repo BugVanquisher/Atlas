@@ -13,8 +13,8 @@ dependencies = []
 include = ["gateway*", "forecasting*", "infra*"]
 
 [tool.black]
-line-length = 88
+line-length = 100
 
 [tool.isort]
 profile = "black"
-line_length = 88
+line_length = 100

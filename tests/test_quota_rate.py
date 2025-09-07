@@ -1,6 +1,8 @@
 import pytest
 from httpx import AsyncClient
+
 from gateway.main import app, settings
+
 
 @pytest.mark.asyncio
 async def test_admin_set_get_limits():
@@ -28,7 +30,7 @@ async def test_admin_set_get_limits():
         assert data["priority"] == "high"
 
         # Verify that the limits are set correctly
-        response = await ac.get(f"/v1/usage", headers={"Authorization": f"Bearer {api_key}"})
+        response = await ac.get("/v1/usage", headers={"Authorization": f"Bearer {api_key}"})
         assert response.status_code == 200
         data = response.json()
         assert data["daily_limit"] == 50000
