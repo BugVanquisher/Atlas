@@ -66,12 +66,8 @@ class QuotaManager:
             }
         return {
             "daily_limit": _get_int(data, "daily_limit", settings.DEFAULT_DAILY_LIMIT),
-            "monthly_limit": _get_int(
-                data, "monthly_limit", settings.DEFAULT_MONTHLY_LIMIT
-            ),
-            "rate_per_sec": _get_float(
-                data, "rate_per_sec", settings.DEFAULT_RATE_PER_SEC
-            ),
+            "monthly_limit": _get_int(data, "monthly_limit", settings.DEFAULT_MONTHLY_LIMIT),
+            "rate_per_sec": _get_float(data, "rate_per_sec", settings.DEFAULT_RATE_PER_SEC),
             "burst": _get_int(data, "burst", settings.DEFAULT_BURST),
             "priority": _normalize_priority(_get_str(data, "priority", "normal")),
         }
@@ -114,9 +110,27 @@ class QuotaManager:
         pipe.expire(m_key, 60 * 60 * 24 * 500)  # ~500 days
         await pipe.execute()
 
-    async def enforce_after_response_or_raise(
-        self, api_key: str, actual_tokens: int, limits: dict
-    ):
+    async def reserve_tokens(self, api_key: str, tokens: int):
+        """
+        Reserve tokens for usage (same as add_tokens).
+        """
+        await self.add_tokens(api_key, tokens)
+
+    async def refund_tokens(self, api_key: str, tokens: int):
+        """
+        Refund previously reserved tokens by decrementing usage.
+        """
+        ymd, ym = ymd_now()
+        d_key = USAGE_D_KEY.format(api_key=api_key, ymd=ymd)
+        m_key = USAGE_M_KEY.format(api_key=api_key, ym=ym)
+        pipe = self.redis.pipeline()
+        pipe.incrby(d_key, -tokens)
+        pipe.expire(d_key, 60 * 60 * 24 * 40)  # ~40 days
+        pipe.incrby(m_key, -tokens)
+        pipe.expire(m_key, 60 * 60 * 24 * 500)  # ~500 days
+        await pipe.execute()
+
+    async def enforce_after_response_or_raise(self, api_key: str, actual_tokens: int, limits: dict):
         used_d, used_m = await self.get_usage(api_key)
         if used_d + actual_tokens > limits["daily_limit"]:
             await self.add_tokens(api_key, actual_tokens)
