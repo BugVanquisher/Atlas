@@ -1,4 +1,4 @@
-[![GitHub release](https://img.shields.io/github/v/release/BugVanquisher/Atlas)](https://github.com/BugVanquisher/Atlas/releases) ![Build](https://github.com/BugVanquisher/Atlas/actions/workflows/ci.yml/badge.svg) [![codecov](https://codecov.io/gh/BugVanquisher/Atlas/branch/main/graph/badge.svg)](https://codecov.io/gh/BugVanquisher/Atlas) ![License](https://img.shields.io/github/license/BugVanquisher/Atlas) ![Contributors](https://img.shields.io/github/contributors/BugVanquisher/Atlas)
+[![GitHub release](https://img.shields.io/github/v/release/BugVanquisher/Atlas)](https://github.com/BugVanquisher/Atlas/releases) ![Build](https://github.com/BugVanquisher/Atlas/actions/workflows/ci.yml/badge.svg) [![codecov](https://codecov.io/gh/BugVanquisher/Atlas/branch/main/graph/badge.svg)](https://codecov.io/gh/BugVanquisher/Atlas) ![License](https://img.shields.io/github/license/BugVanquisher/Atlas) 
 
 # Atlas
 
