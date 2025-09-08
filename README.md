@@ -64,11 +64,13 @@ Prometheus metrics exposed at /metrics:
 
 •	Phase 1.5: Add request criticality support ✅
 
-•	Phase 2: Streaming support, pre-reservations, advanced admin ops (WIP)
+•	Phase 2: Streaming support, pre-reservations ✅
 
-•	Phase 3: Traffic forecasting, capacity planning
+•	Phase 3: Traffic forecasting, capacity planning (WIP)
 
 •	Phase 4: Dashboards, billing, multi-tenant observability
+
+•	Post MVP: advanced admin ops
 
 ---
 
