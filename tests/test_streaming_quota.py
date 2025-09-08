@@ -1,4 +1,3 @@
-# tests/test_streaming_quota.py
 import json
 
 import pytest
@@ -66,7 +65,10 @@ async def test_reservation_and_refund_success(client: AsyncClient, monkeypatch):
 
     resp = await client.post(
         "/v1/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}", "content-type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "content-type": "application/json",
+        },
         json={
             "model": "mock",
             "messages": [{"role": "user", "content": "hi"}],
@@ -109,7 +111,10 @@ async def test_full_reservation_if_no_usage(client: AsyncClient, monkeypatch):
 
     resp = await client.post(
         "/v1/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}", "content-type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "content-type": "application/json",
+        },
         json={
             "model": "mock",
             "messages": [{"role": "user", "content": "hi"}],
@@ -151,7 +156,10 @@ async def test_refund_all_on_failure(client: AsyncClient, monkeypatch):
 
     resp = await client.post(
         "/v1/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}", "content-type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "content-type": "application/json",
+        },
         json={
             "model": "mock",
             "messages": [{"role": "user", "content": "hi"}],

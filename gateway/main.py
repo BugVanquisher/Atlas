@@ -4,7 +4,6 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
-from starlette.responses import StreamingResponse
 
 from .auth import extract_api_key
 from .config import settings
@@ -19,6 +18,7 @@ from .metrics import (
 )
 from .quota import ALLOWED_PRIORITIES, QuotaManager
 from .rate_limit import RateLimiter
+from .streaming import StreamingHandler  # New enhanced streaming handler
 from .vllm_client import UpstreamClient
 
 setup_logging()
@@ -45,6 +45,20 @@ setup_metrics(app)
 quota = QuotaManager(redis)
 rl = RateLimiter(redis)
 upstream = UpstreamClient()
+
+# Initialize enhanced streaming handler
+streaming_handler = StreamingHandler(
+    quota_manager=quota,
+    upstream_client=upstream,
+    metrics=type(
+        "Metrics",
+        (),
+        {
+            "quota_rejections_total": quota_rejections_total,
+            "tokens_used_total": tokens_used_total,
+        },
+    )(),
+)
 
 
 @asynccontextmanager
@@ -120,7 +134,7 @@ async def proxy(
     api_key: str = API_KEY_DEP,
 ):
     limits = await quota.get_limits(api_key)
-    logger.info("incoming request")
+    logger.info(f"Incoming request to /{full_path}")
 
     # Priority: header override if provided; else use key default
     req_priority = request.headers.get(
@@ -132,11 +146,13 @@ async def proxy(
     route_name = route_name_from_path(full_path)
     requests_total.labels(api_key=api_key, priority=req_priority, route=route_name).inc()
 
+    # Rate limiting check
     allowed = await rl.allow(api_key, limits["rate_per_sec"], limits["burst"])
     if not allowed:
         rate_limit_rejections_total.labels(api_key=api_key, priority=req_priority).inc()
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
 
+    # Parse request body
     payload = None
     body_bytes = await request.body()
     if request.headers.get("content-type", "").startswith("application/json"):
@@ -146,159 +162,35 @@ async def proxy(
             payload = {}
 
     is_stream = bool(payload and payload.get("stream") is True)
-    logger.info(f"is_stream={is_stream}")
-    # --- Streaming ---
+    logger.info(f"Processing request: stream={is_stream}, priority={req_priority}")
+
+    # --- Enhanced Streaming Path ---
     if is_stream:
-        # Check quota upfront for streaming requests
-        reservation = int(payload.get("max_tokens") or settings.DEFAULT_STREAM_RESERVATION or 0)
-
-        if reservation > 0:
-            used_d, used_m = await quota.get_usage(api_key)
-            if used_d + reservation > limits["daily_limit"]:
-                quota_rejections_total.labels(
-                    api_key=api_key, priority=req_priority, scope="daily"
-                ).inc()
-                raise HTTPException(status_code=429, detail="Daily quota would be exceeded")
-            if used_m + reservation > limits["monthly_limit"]:
-                quota_rejections_total.labels(
-                    api_key=api_key, priority=req_priority, scope="monthly"
-                ).inc()
-                raise HTTPException(status_code=429, detail="Monthly quota would be exceeded")
-            await quota.reserve_tokens(api_key, reservation)
-
-        # Test the connection upfront to catch immediate errors
-        if payload is not None and "stream" not in payload:
-            payload["stream"] = True
-            body_bytes = json.dumps(payload).encode("utf-8")
-
         try:
-            async with upstream.stream(
-                request.method, full_path, dict(request.headers), body_bytes
-            ) as resp:
-                # Check for early connection errors
-                if not (200 <= resp.status_code < 300):
-                    if reservation > 0:
-                        await quota.refund_tokens(api_key, reservation)
-                    raise HTTPException(
-                        status_code=resp.status_code,
-                        detail=f"Upstream error: {resp.status_code}",
-                    )
-
-                # Try to get the first chunk to detect immediate failures
-                try:
-                    async for chunk in resp.aiter_raw():
-                        # Just test the first chunk to catch early streaming errors
-                        break
-                except Exception as e:
-                    # Immediate error in streaming - we can still return proper status code
-                    if reservation > 0:
-                        await quota.refund_tokens(api_key, reservation)
-                    raise HTTPException(status_code=502, detail=f"Upstream streaming failed: {e}")
-
-                # If we got here, streaming should work - fall back to the actual streaming
-
+            return await streaming_handler.handle_streaming_request(
+                request=request,
+                full_path=full_path,
+                api_key=api_key,
+                limits=limits,
+                req_priority=req_priority,
+                payload=payload,
+                body_bytes=body_bytes,
+            )
         except HTTPException:
-            # Re-raise HTTPException (proper status codes)
+            # HTTPExceptions are properly formatted, re-raise them
             raise
         except Exception as e:
-            logger.warning(f"Exception during streaming setup: {e}")
-            if reservation > 0:
-                await quota.refund_tokens(api_key, reservation)
-            raise HTTPException(status_code=502, detail="Upstream service failed")
+            logger.error(f"Unexpected error in streaming handler: {e}")
+            raise HTTPException(status_code=502, detail="Internal streaming error")
 
-        async def stream_and_finally(body_bytes_arg):
-            status_ok = False
-            response_body = b""
-
-            try:
-                if payload is not None and "stream" not in payload:
-                    payload["stream"] = True
-                    body_bytes_arg = json.dumps(payload).encode("utf-8")
-
-                async with upstream.stream(
-                    request.method, full_path, dict(request.headers), body_bytes_arg
-                ) as resp:
-                    async for chunk in resp.aiter_raw():
-                        if chunk:
-                            response_body += chunk
-                            yield chunk
-                    status_ok = True
-
-            except Exception as e:
-                logger.warning(f"Exception during streaming: {e}")
-                # At this point streaming has started, so we can't change HTTP status
-                # Just yield an error response
-                error_response = json.dumps({"error": "Upstream service failed"}).encode()
-                yield error_response
-
-            finally:
-                # Handle quota refunding
-                if reservation > 0:
-                    if status_ok:
-                        actual_tokens = 0
-                        try:
-                            if response_body:
-                                # Try to parse as a single JSON object first
-                                try:
-                                    jr = json.loads(response_body.decode())
-                                    if isinstance(jr, dict) and "usage" in jr:
-                                        actual_tokens = int(jr["usage"].get("total_tokens", 0))
-                                except Exception:
-                                    # If that fails, try streaming format
-                                    for line in response_body.strip().split(b"\n"):
-                                        if line.startswith(b"data:"):
-                                            line = line[5:].strip()
-                                        if line == b"[DONE]":
-                                            continue
-                                        if not line:
-                                            continue
-                                        try:
-                                            jr = json.loads(line)
-                                            if isinstance(jr, dict) and "usage" in jr:
-                                                actual_tokens = int(
-                                                    jr["usage"].get("total_tokens", 0)
-                                                )
-                                        except Exception:
-                                            pass
-                        except Exception:
-                            pass
-
-                        refund = reservation - actual_tokens
-                        if actual_tokens > 0:
-                            if refund > 0:
-                                await quota.refund_tokens(api_key, refund)
-                            # Don't add tokens here - the reservation already added them,
-                            # we just refunded the excess, so the net is correct
-                            tokens_used_total.labels(api_key=api_key, priority=req_priority).inc(
-                                actual_tokens
-                            )
-                        else:
-                            # if no tokens were used, we keep the full reservation
-                            tokens_used_total.labels(api_key=api_key, priority=req_priority).inc(
-                                reservation
-                            )
-                    else:
-                        # On error, refund all tokens
-                        await quota.refund_tokens(api_key, reservation)
-
-        return StreamingResponse(
-            stream_and_finally(body_bytes),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",
-            },
-        )
-
-    # --- Non-stream (existing path) ---
+    # --- Non-streaming Path (unchanged) ---
     upstream_resp = await upstream.forward(
         request.method, full_path, dict(request.headers), body_bytes
     )
 
     raw = upstream_resp.content
 
-    # Token usage (if present)
+    # Token usage parsing for non-streaming
     actual_tokens = 0
     if "application/json" in upstream_resp.headers.get("content-type", "") and raw:
         try:
@@ -308,10 +200,11 @@ async def proxy(
         except Exception:
             pass
 
-    # Quota enforcement happens after upstream reply; record tokens metric
+    # Record token usage metrics
     if actual_tokens > 0:
         tokens_used_total.labels(api_key=api_key, priority=req_priority).inc(actual_tokens)
 
+    # Quota enforcement for non-streaming
     try:
         if actual_tokens > 0:
             await quota.enforce_after_response_or_raise(api_key, actual_tokens, limits)

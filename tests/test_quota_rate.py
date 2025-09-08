@@ -7,7 +7,10 @@ from gateway.main import app, settings
 @pytest.mark.asyncio
 async def test_admin_set_get_limits():
     api_key = "test-key-limits"
-    headers = {"x-admin-key": settings.ADMIN_API_KEY, "content-type": "application/json"}
+    headers = {
+        "x-admin-key": settings.ADMIN_API_KEY,
+        "content-type": "application/json",
+    }
     payload = {
         "api_key": api_key,
         "daily_limit": 50000,

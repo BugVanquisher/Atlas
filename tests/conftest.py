@@ -21,6 +21,11 @@ async def fake_redis_fixture():
     main.redis = fake
     main.quota = QuotaManager(fake)
     main.rl = DummyRateLimiter()
+
+    # Also update the streaming handler's quota manager
+    if hasattr(main, "streaming_handler"):
+        main.streaming_handler.quota = main.quota
+
     yield
     await fake.flushall()
     await fake.aclose()  # use aclose() for async client
