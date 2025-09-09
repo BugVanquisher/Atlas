@@ -101,11 +101,12 @@ class TokenUsageParser:
 class StreamingHandler:
     """Enhanced streaming handler with better error handling and token tracking"""
 
-    def __init__(self, quota_manager, upstream_client, metrics):
+    def __init__(self, quota_manager, upstream_client, metrics, forecasting_integration=None):
         self.quota = quota_manager
         self.upstream = upstream_client
         self.metrics = metrics
         self.parser = TokenUsageParser()
+        self.forecasting = forecasting_integration
 
     async def handle_streaming_request(
         self,
@@ -133,18 +134,14 @@ class StreamingHandler:
             # Refund quota on connectivity validation failure
             if reservation > 0:
                 await self.quota.refund_tokens(api_key, reservation)
-                logger.info(
-                    f"Refunded {reservation} tokens due to connectivity validation " f"failure"
-                )
+                logger.info(f"Refunded {reservation} tokens due to connectivity validation failure")
             # Convert StreamingError to HTTPException with proper status code
             raise HTTPException(status_code=e.status_code, detail=e.message)
         except Exception as e:
             # Refund quota on unexpected validation failure
             if reservation > 0:
                 await self.quota.refund_tokens(api_key, reservation)
-                logger.info(
-                    f"Refunded {reservation} tokens due to unexpected validation " f"failure"
-                )
+                logger.info(f"Refunded {reservation} tokens due to unexpected validation failure")
             # Convert generic error to 502 Bad Gateway
             raise HTTPException(status_code=502, detail=f"Upstream validation failed: {str(e)}")
 
@@ -221,8 +218,7 @@ class StreamingHandler:
             ) as resp:
                 if not (200 <= resp.status_code < 300):
                     raise StreamingError(
-                        f"Upstream returned status {resp.status_code}",
-                        status_code=resp.status_code,
+                        f"Upstream returned status {resp.status_code}", status_code=resp.status_code
                     )
 
                 # Try to get first chunk to ensure streaming works
@@ -265,8 +261,7 @@ class StreamingHandler:
 
                 if not (200 <= resp.status_code < 300):
                     raise StreamingError(
-                        f"Upstream error: {resp.status_code}",
-                        status_code=resp.status_code,
+                        f"Upstream error: {resp.status_code}", status_code=resp.status_code
                     )
 
                 stream_started = True
@@ -311,19 +306,15 @@ class StreamingHandler:
             if not stream_started:
                 raise HTTPException(status_code=502, detail="Upstream service failed")
             else:
-                error_data = {"error": "Service temporarily unavailable"}
-                error_chunk = f"data: {json.dumps(error_data)}\n\n"
+                error_chunk = (
+                    f'data: {json.dumps({"error": "Service temporarily unavailable"})}\n\n'
+                )
                 yield error_chunk.encode()
 
         finally:
             # Always handle quota cleanup
             await self._handle_quota_cleanup(
-                api_key,
-                req_priority,
-                reservation,
-                actual_tokens,
-                response_body,
-                last_error,
+                api_key, req_priority, reservation, actual_tokens, response_body, last_error
             )
 
     async def _handle_quota_cleanup(
@@ -364,10 +355,25 @@ class StreamingHandler:
                     actual_tokens
                 )
 
+                # Record forecasting metrics if available
+                if self.forecasting:
+                    try:
+                        await self.forecasting.record_request_metrics(
+                            api_key=api_key,
+                            tokens_used=actual_tokens,
+                            priority=req_priority,
+                            route="chat_completions",  # Streaming is typically chat completions
+                            model=None,  # Model info not easily available in cleanup
+                        )
+                    except Exception as forecasting_error:
+                        logger.warning(
+                            f"Failed to record streaming forecasting metrics: {forecasting_error}"
+                        )
+
             else:
                 # No usage data available, keep full reservation
                 logger.warning(
-                    f"No token usage data found, keeping full reservation of " f"{reservation}"
+                    f"No token usage data found, keeping full reservation of {reservation}"
                 )
                 self.metrics.tokens_used_total.labels(api_key=api_key, priority=req_priority).inc(
                     reservation
@@ -379,9 +385,7 @@ class StreamingHandler:
             if reservation > 0:
                 try:
                     await self.quota.refund_tokens(api_key, reservation)
-                    logger.info(
-                        f"Emergency refund of {reservation} tokens due to cleanup " f"error"
-                    )
+                    logger.info(f"Emergency refund of {reservation} tokens due to cleanup error")
                 except Exception as cleanup_err:
                     logger.error(f"Failed emergency refund: {cleanup_err}")
 

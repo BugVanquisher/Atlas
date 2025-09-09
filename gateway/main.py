@@ -1,7 +1,9 @@
+import asyncio
 import json
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 
@@ -20,6 +22,19 @@ from .quota import ALLOWED_PRIORITIES, QuotaManager
 from .rate_limit import RateLimiter
 from .streaming import StreamingHandler  # New enhanced streaming handler
 from .vllm_client import UpstreamClient
+
+try:
+    from forecasting.metrics_collector import ForecastingIntegration
+
+    from .forecasting_api import forecasting_router
+
+    FORECASTING_ENABLED = True
+except ImportError:
+    # Forecasting modules not available, disable forecasting features
+    ForecastingIntegration = None
+    forecasting_router = None
+    FORECASTING_ENABLED = False
+
 
 setup_logging()
 
@@ -46,6 +61,14 @@ quota = QuotaManager(redis)
 rl = RateLimiter(redis)
 upstream = UpstreamClient()
 
+# Initialize forecasting integration
+if FORECASTING_ENABLED:
+    forecasting = ForecastingIntegration(redis)
+    # Include the forecasting router
+    app.include_router(forecasting_router)
+else:
+    forecasting = None
+
 # Initialize enhanced streaming handler
 streaming_handler = StreamingHandler(
     quota_manager=quota,
@@ -53,11 +76,9 @@ streaming_handler = StreamingHandler(
     metrics=type(
         "Metrics",
         (),
-        {
-            "quota_rejections_total": quota_rejections_total,
-            "tokens_used_total": tokens_used_total,
-        },
+        {"quota_rejections_total": quota_rejections_total, "tokens_used_total": tokens_used_total},
     )(),
+    forecasting_integration=forecasting,  # Pass forecasting integration
 )
 
 
@@ -71,11 +92,6 @@ async def lifespan(app: FastAPI):
 
 
 app.router.lifespan_context = lifespan  # use FastAPI lifespan (avoids deprecation warning)
-
-
-@app.get("/healthz")
-async def healthz():
-    return {"ok": True}
 
 
 @app.post("/v1/admin/keys")
@@ -161,13 +177,16 @@ async def proxy(
         except Exception:
             payload = {}
 
+    # Extract model from request if available
+    model = payload.get("model") if payload else None
+
     is_stream = bool(payload and payload.get("stream") is True)
     logger.info(f"Processing request: stream={is_stream}, priority={req_priority}")
 
     # --- Enhanced Streaming Path ---
     if is_stream:
         try:
-            return await streaming_handler.handle_streaming_request(
+            response = await streaming_handler.handle_streaming_request(
                 request=request,
                 full_path=full_path,
                 api_key=api_key,
@@ -176,6 +195,11 @@ async def proxy(
                 payload=payload,
                 body_bytes=body_bytes,
             )
+
+            # Record streaming metrics after successful response
+            # Note: Token usage will be recorded in the streaming handler cleanup
+            return response
+
         except HTTPException:
             # HTTPExceptions are properly formatted, re-raise them
             raise
@@ -183,7 +207,7 @@ async def proxy(
             logger.error(f"Unexpected error in streaming handler: {e}")
             raise HTTPException(status_code=502, detail="Internal streaming error")
 
-    # --- Non-streaming Path (unchanged) ---
+    # --- Non-streaming Path (enhanced with forecasting metrics) ---
     upstream_resp = await upstream.forward(
         request.method, full_path, dict(request.headers), body_bytes
     )
@@ -203,6 +227,20 @@ async def proxy(
     # Record token usage metrics
     if actual_tokens > 0:
         tokens_used_total.labels(api_key=api_key, priority=req_priority).inc(actual_tokens)
+
+        # Record forecasting metrics for successful requests
+        if FORECASTING_ENABLED and forecasting:
+            try:
+                await forecasting.record_request_metrics(
+                    api_key=api_key,
+                    tokens_used=actual_tokens,
+                    priority=req_priority,
+                    route=route_name,
+                    model=model,
+                )
+            except Exception as metrics_error:
+                # Don't fail the request if metrics recording fails
+                logger.warning(f"Failed to record forecasting metrics: {metrics_error}")
 
     # Quota enforcement for non-streaming
     try:
@@ -224,3 +262,77 @@ async def proxy(
         headers=dict(upstream_resp.headers),
         media_type=upstream_resp.headers.get("content-type"),
     )
+
+
+# Add periodic maintenance task
+
+
+async def periodic_maintenance():
+    """Run periodic maintenance tasks"""
+    while True:
+        try:
+            await asyncio.sleep(3600)  # Run every hour
+            if FORECASTING_ENABLED and forecasting:
+                await forecasting.run_maintenance()
+                logger.info("Periodic maintenance completed")
+        except Exception as e:
+            logger.error(f"Periodic maintenance failed: {e}")
+
+
+# Start background maintenance on startup
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # startup
+    # Start the maintenance task
+    maintenance_task = asyncio.create_task(periodic_maintenance())
+
+    yield
+
+    # shutdown
+    maintenance_task.cancel()
+    try:
+        await maintenance_task
+    except asyncio.CancelledError:
+        pass
+
+    await upstream.close()
+    await redis.aclose()
+
+
+# Add a health check that includes forecasting status
+@app.get("/healthz")
+async def healthz():
+    """Enhanced health check including forecasting status"""
+    try:
+        # Test Redis connectivity
+        await redis.ping()
+        redis_status = "healthy"
+    except Exception:
+        redis_status = "unhealthy"
+
+    forecasting_status = "disabled"
+    if FORECASTING_ENABLED and forecasting:
+        try:
+            # Test forecasting system
+            test_date = datetime.now(timezone.utc) - timedelta(days=1)
+            await forecasting.collector.get_top_users(test_date, limit=1)
+            forecasting_status = "healthy"
+        except Exception:
+            forecasting_status = "unhealthy"
+
+    overall_status = (
+        "healthy"
+        if redis_status == "healthy" and (forecasting_status in ["healthy", "disabled"])
+        else "degraded"
+    )
+
+    components = {"redis": redis_status}
+    if FORECASTING_ENABLED:
+        components["forecasting"] = forecasting_status
+
+    return {
+        "ok": overall_status == "healthy",
+        "status": overall_status,
+        "components": components,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
