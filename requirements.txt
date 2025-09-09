@@ -1,3 +1,4 @@
+# Core project dependencies
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 httpx==0.27.0
@@ -7,3 +8,12 @@ pydantic-settings==2.4.0
 prometheus-fastapi-instrumentator==7.0.0
 python-dotenv==1.0.1
 fakeredis==2.23.2
+
+# Forecasting and analytics dependencies
+numpy>=1.26.0
+pandas==2.0.3
+scikit-learn==1.3.0
+
+# For visualization in demo (optional)
+matplotlib==3.8.0
+seaborn==0.12.2
