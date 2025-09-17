@@ -5,6 +5,9 @@
 **Atlas** is an intelligent traffic governance and quota management gateway for LLM inference (vLLM, OpenAI API compatible).  
 It enforces **rate limits, daily/monthly quotas, advanced streaming support, and intelligent observability** as a production-ready layer in front of your model server.
 
+**What is Atlas's role?**
+![Atlas role](images/atlas_role.svg)
+
 ---
 
 ## ✨ Features (Phase 2 Complete - v0.2.5)
