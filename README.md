@@ -1,5 +1,9 @@
 [![GitHub release](https://img.shields.io/github/v/release/BugVanquisher/Atlas)](https://github.com/BugVanquisher/Atlas/releases) ![Build](https://github.com/BugVanquisher/Atlas/actions/workflows/ci.yml/badge.svg) [![codecov](https://codecov.io/gh/BugVanquisher/Atlas/branch/main/graph/badge.svg)](https://codecov.io/gh/BugVanquisher/Atlas) ![License](https://img.shields.io/github/license/BugVanquisher/Atlas) 
 
+<p align="center">
+  <img src="images/atlas_logo.png" alt="Atlas logo" width="240">
+</p>
+
 # Atlas
 
 **Atlas** is an intelligent traffic governance and quota management gateway for LLM inference (vLLM, OpenAI API compatible).  
