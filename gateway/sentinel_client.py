@@ -11,6 +11,7 @@ from .config import settings
 
 class Verdict(str, Enum):
     """Safety supervision verdict."""
+
     PASS = "pass"
     FAIL = "fail"
     FIX = "fix"
@@ -19,6 +20,7 @@ class Verdict(str, Enum):
 @dataclass
 class SupervisionResult:
     """Result from Sentinel supervision API."""
+
     verdict: Verdict
     reasons: list[str]
     confidence: float

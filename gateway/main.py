@@ -274,16 +274,14 @@ async def proxy(
 
                 # Handle supervision verdict
                 if supervision_result.is_blocked:
-                    logger.warning(
-                        f"Request blocked by Sentinel: {supervision_result.reasons}"
-                    )
+                    logger.warning(f"Request blocked by Sentinel: {supervision_result.reasons}")
                     raise HTTPException(
                         status_code=422,
                         detail={
                             "error": "Content blocked by safety filter",
                             "reasons": supervision_result.reasons,
                             "confidence": supervision_result.confidence,
-                        }
+                        },
                     )
 
                 # If FIX verdict, replace the content with redacted version
@@ -292,7 +290,9 @@ async def proxy(
                     # Update the response with redacted content
                     if "choices" in response_json and response_json["choices"]:
                         if "message" in response_json["choices"][0]:
-                            response_json["choices"][0]["message"]["content"] = supervision_result.fixed_output
+                            response_json["choices"][0]["message"][
+                                "content"
+                            ] = supervision_result.fixed_output
                         elif "text" in response_json["choices"][0]:
                             response_json["choices"][0]["text"] = supervision_result.fixed_output
                     # Re-encode the modified response
@@ -303,10 +303,7 @@ async def proxy(
         except Exception as e:
             logger.error(f"Sentinel supervision error: {e}")
             if not settings.SENTINEL_FAIL_OPEN:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Safety supervision unavailable"
-                )
+                raise HTTPException(status_code=503, detail="Safety supervision unavailable")
             # Fail-open: continue without blocking
 
     # Record token usage metrics
@@ -419,10 +416,10 @@ async def healthz():
 
     # Determine overall status
     critical_components_ok = redis_status == "healthy"
-    optional_components_ok = (
-        forecasting_status in ["healthy", "disabled"] and
-        sentinel_status in ["healthy", "disabled"]
-    )
+    optional_components_ok = forecasting_status in ["healthy", "disabled"] and sentinel_status in [
+        "healthy",
+        "disabled",
+    ]
 
     if critical_components_ok and optional_components_ok:
         overall_status = "healthy"

@@ -104,8 +104,10 @@ class QuotaManager:
                 "rate_per_sec": rate_per_sec,
                 "burst": burst,
                 "priority": _normalize_priority(priority),
-                "safety_tier3_daily_limit": safety_tier3_daily or settings.DEFAULT_DAILY_SAFETY_TIER3_LIMIT,
-                "safety_tier3_monthly_limit": safety_tier3_monthly or settings.DEFAULT_MONTHLY_SAFETY_TIER3_LIMIT,
+                "safety_tier3_daily_limit": safety_tier3_daily
+                or settings.DEFAULT_DAILY_SAFETY_TIER3_LIMIT,
+                "safety_tier3_monthly_limit": safety_tier3_monthly
+                or settings.DEFAULT_MONTHLY_SAFETY_TIER3_LIMIT,
             },
         )
 
@@ -186,7 +188,9 @@ class QuotaManager:
         pipe.expire(m_key, 60 * 60 * 24 * 500)  # ~500 days
         await pipe.execute()
 
-    async def check_safety_tier3_budget(self, api_key: str, limits: dict) -> tuple[bool, str | None]:
+    async def check_safety_tier3_budget(
+        self, api_key: str, limits: dict
+    ) -> tuple[bool, str | None]:
         """Check if the API key has remaining Tier 3 budget.
 
         Args:
@@ -199,8 +203,12 @@ class QuotaManager:
         """
         used_d, used_m = await self.get_safety_tier3_usage(api_key)
 
-        daily_limit = limits.get("safety_tier3_daily_limit", settings.DEFAULT_DAILY_SAFETY_TIER3_LIMIT)
-        monthly_limit = limits.get("safety_tier3_monthly_limit", settings.DEFAULT_MONTHLY_SAFETY_TIER3_LIMIT)
+        daily_limit = limits.get(
+            "safety_tier3_daily_limit", settings.DEFAULT_DAILY_SAFETY_TIER3_LIMIT
+        )
+        monthly_limit = limits.get(
+            "safety_tier3_monthly_limit", settings.DEFAULT_MONTHLY_SAFETY_TIER3_LIMIT
+        )
 
         if used_d >= daily_limit:
             return False, f"Daily safety Tier 3 budget exceeded ({used_d}/{daily_limit})"
