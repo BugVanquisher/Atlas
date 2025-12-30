@@ -20,6 +20,7 @@ from .metrics import (
 )
 from .quota import ALLOWED_PRIORITIES, QuotaManager
 from .rate_limit import RateLimiter
+from .sentinel_client import SentinelClient, Verdict
 from .streaming import StreamingHandler  # New enhanced streaming handler
 from .vllm_client import UpstreamClient
 
@@ -61,6 +62,12 @@ quota = QuotaManager(redis)
 rl = RateLimiter(redis)
 upstream = UpstreamClient()
 
+# Initialize Sentinel client if enabled
+sentinel: SentinelClient | None = None
+if settings.SENTINEL_ENABLED:
+    sentinel = SentinelClient()
+    logger.info(f"Sentinel integration enabled: {settings.SENTINEL_URL}")
+
 # Initialize forecasting integration
 if FORECASTING_ENABLED:
     forecasting = ForecastingIntegration(redis)
@@ -83,15 +90,17 @@ streaming_handler = StreamingHandler(
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan_context(app: FastAPI):
     # startup
     yield
     # shutdown
+    if sentinel:
+        await sentinel.close()
     await upstream.close()
     await redis.aclose()
 
 
-app.router.lifespan_context = lifespan  # use FastAPI lifespan (avoids deprecation warning)
+app.router.lifespan_context = lifespan_context  # use FastAPI lifespan (avoids deprecation warning)
 
 
 @app.post("/v1/admin/keys")
@@ -213,16 +222,92 @@ async def proxy(
     )
 
     raw = upstream_resp.content
+    response_json = None
 
     # Token usage parsing for non-streaming
     actual_tokens = 0
     if "application/json" in upstream_resp.headers.get("content-type", "") and raw:
         try:
-            jr = json.loads(raw)
-            if isinstance(jr, dict) and "usage" in jr:
-                actual_tokens = int(jr["usage"].get("total_tokens", 0))
+            response_json = json.loads(raw)
+            if isinstance(response_json, dict) and "usage" in response_json:
+                actual_tokens = int(response_json["usage"].get("total_tokens", 0))
         except Exception:
             pass
+
+    # --- Sentinel Safety Supervision ---
+    if sentinel and response_json:
+        try:
+            # Extract the LLM output for supervision
+            llm_output = ""
+            if "choices" in response_json and response_json["choices"]:
+                choice = response_json["choices"][0]
+                if "message" in choice and "content" in choice["message"]:
+                    llm_output = choice["message"]["content"] or ""
+                elif "text" in choice:
+                    llm_output = choice["text"] or ""
+
+            if llm_output:
+                # Get the original prompt from the request
+                original_prompt = ""
+                if payload:
+                    if "messages" in payload and payload["messages"]:
+                        # Chat completion format
+                        for msg in payload["messages"]:
+                            if msg.get("role") == "user":
+                                original_prompt = msg.get("content", "")
+                                break
+                    elif "prompt" in payload:
+                        # Completion format
+                        original_prompt = payload["prompt"]
+
+                # Call Sentinel for supervision
+                supervision_result = await sentinel.supervise(
+                    prompt=original_prompt,
+                    draft=llm_output,
+                    context={"api_key": api_key, "model": model, "route": route_name},
+                )
+
+                # Track Tier 3 invocations for safety compute budget
+                if supervision_result.used_deep_ml:
+                    await quota.add_safety_tier3_invocation(api_key)
+                    logger.info(f"Tier 3 invocation recorded for {api_key}")
+
+                # Handle supervision verdict
+                if supervision_result.is_blocked:
+                    logger.warning(
+                        f"Request blocked by Sentinel: {supervision_result.reasons}"
+                    )
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "error": "Content blocked by safety filter",
+                            "reasons": supervision_result.reasons,
+                            "confidence": supervision_result.confidence,
+                        }
+                    )
+
+                # If FIX verdict, replace the content with redacted version
+                if supervision_result.verdict == Verdict.FIX and supervision_result.fixed_output:
+                    logger.info(f"Content redacted by Sentinel: {supervision_result.reasons}")
+                    # Update the response with redacted content
+                    if "choices" in response_json and response_json["choices"]:
+                        if "message" in response_json["choices"][0]:
+                            response_json["choices"][0]["message"]["content"] = supervision_result.fixed_output
+                        elif "text" in response_json["choices"][0]:
+                            response_json["choices"][0]["text"] = supervision_result.fixed_output
+                    # Re-encode the modified response
+                    raw = json.dumps(response_json).encode()
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Sentinel supervision error: {e}")
+            if not settings.SENTINEL_FAIL_OPEN:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Safety supervision unavailable"
+                )
+            # Fail-open: continue without blocking
 
     # Record token usage metrics
     if actual_tokens > 0:
@@ -295,14 +380,16 @@ async def lifespan(app: FastAPI):
     except asyncio.CancelledError:
         pass
 
+    if sentinel:
+        await sentinel.close()
     await upstream.close()
     await redis.aclose()
 
 
-# Add a health check that includes forecasting status
+# Add a health check that includes forecasting and sentinel status
 @app.get("/healthz")
 async def healthz():
-    """Enhanced health check including forecasting status"""
+    """Enhanced health check including forecasting and sentinel status"""
     try:
         # Test Redis connectivity
         await redis.ping()
@@ -320,15 +407,35 @@ async def healthz():
         except Exception:
             forecasting_status = "unhealthy"
 
-    overall_status = (
-        "healthy"
-        if redis_status == "healthy" and (forecasting_status in ["healthy", "disabled"])
-        else "degraded"
+    sentinel_status = "disabled"
+    if settings.SENTINEL_ENABLED and sentinel:
+        try:
+            if await sentinel.health_check():
+                sentinel_status = "healthy"
+            else:
+                sentinel_status = "unhealthy"
+        except Exception:
+            sentinel_status = "unhealthy"
+
+    # Determine overall status
+    critical_components_ok = redis_status == "healthy"
+    optional_components_ok = (
+        forecasting_status in ["healthy", "disabled"] and
+        sentinel_status in ["healthy", "disabled"]
     )
+
+    if critical_components_ok and optional_components_ok:
+        overall_status = "healthy"
+    elif critical_components_ok:
+        overall_status = "degraded"
+    else:
+        overall_status = "unhealthy"
 
     components = {"redis": redis_status}
     if FORECASTING_ENABLED:
         components["forecasting"] = forecasting_status
+    if settings.SENTINEL_ENABLED:
+        components["sentinel"] = sentinel_status
 
     return {
         "ok": overall_status == "healthy",

@@ -72,6 +72,16 @@ class Settings(BaseSettings):
     STREAM_DEBUG_LOGGING: bool = False  # enable verbose streaming logs
     STREAM_SAVE_RESPONSES: bool = False  # save streaming responses for debugging
 
+    # Sentinel integration (safety supervision)
+    SENTINEL_ENABLED: bool = False  # Enable Sentinel safety checks
+    SENTINEL_URL: str = "http://sentinel:8000"  # Sentinel API URL
+    SENTINEL_TIMEOUT: int = 30  # Timeout for Sentinel API calls (seconds)
+    SENTINEL_FAIL_OPEN: bool = False  # If True, allow requests when Sentinel is unavailable
+
+    # Safety compute budget (Tier 3 / Deep ML invocations)
+    DEFAULT_DAILY_SAFETY_TIER3_LIMIT: int = 100  # Daily Tier 3 invocations per key
+    DEFAULT_MONTHLY_SAFETY_TIER3_LIMIT: int = 1000  # Monthly Tier 3 invocations per key
+
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
     def get_stream_reservation_for_priority(self, priority: str, daily_limit: int) -> int:
