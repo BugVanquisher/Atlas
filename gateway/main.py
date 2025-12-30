@@ -438,7 +438,7 @@ async def healthz():
         components["sentinel"] = sentinel_status
 
     return {
-        "ok": overall_status == "healthy",
+        "ok": critical_components_ok,  # OK if critical components (Redis) are healthy
         "status": overall_status,
         "components": components,
         "timestamp": datetime.now(timezone.utc).isoformat(),
