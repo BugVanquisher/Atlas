@@ -125,7 +125,7 @@ Authorization: Bearer your-api-key
 # Core settings
 UPSTREAM_BASE_URL=http://your-llm-server:9000
 REDIS_URL=redis://localhost:6379/0
-ADMIN_API_KEY=your-secure-admin-key
+ADMIN_API_KEY=demo-admin-key
 
 # Quota defaults
 DEFAULT_DAILY_LIMIT=100000
@@ -140,6 +140,8 @@ STREAM_CONNECT_TIMEOUT=30
 STREAM_READ_TIMEOUT=300
 STREAM_DEBUG_LOGGING=false
 ```
+
+**Security note:** `demo-admin-key` is for local testing only. Set `ADMIN_API_KEY` to a secure value in any real deployment.
 
 ### **Priority-Based Resource Allocation**
 ```json
