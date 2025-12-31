@@ -24,7 +24,7 @@ import numpy as np
 class ForecastingDemo:
     """Demo class for Atlas forecasting capabilities"""
 
-    def __init__(self, base_url: str = "http://localhost:8000", admin_key: str = "my-admin-key"):
+    def __init__(self, base_url: str = "http://localhost:8000", admin_key: str = "demo-admin-key"):
         self.base_url = base_url
         self.admin_key = admin_key
 
@@ -401,7 +401,7 @@ class ForecastingDemo:
 async def main():
     parser = argparse.ArgumentParser(description="Atlas Forecasting Demo")
     parser.add_argument("--url", default="http://localhost:8080", help="Atlas Gateway URL")
-    parser.add_argument("--admin-key", default="my-admin-key", help="Admin API key")
+    parser.add_argument("--admin-key", default="demo-admin-key", help="Admin API key")
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 

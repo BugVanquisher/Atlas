@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ADMIN_KEY=${ADMIN_KEY:-my-admin-key}
+ADMIN_KEY=${ADMIN_KEY:-demo-admin-key}
 API_KEY=${API_KEY:-test-key-123}
 
 curl -s -H "x-admin-key: ${ADMIN_KEY}" -H "content-type: application/json"   -d "{\"api_key\":\"${API_KEY}\",\"daily_limit\":200000,\"monthly_limit\":2000000,\"rate_per_sec\":5,\"burst\":10}"   http://localhost:8080/v1/admin/keys | jq

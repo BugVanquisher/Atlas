@@ -63,7 +63,7 @@ class SentinelClient:
         self.base_url = base_url or settings.SENTINEL_URL
         self.timeout = timeout or settings.SENTINEL_TIMEOUT
         # Use internal demo key for Atlas-Sentinel communication
-        self.api_key = api_key or os.getenv("SENTINEL_INTERNAL_KEY", "aether-internal-key")
+        self.api_key = api_key or os.getenv("SENTINEL_INTERNAL_KEY", "demo-internal-key")
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=self.timeout,

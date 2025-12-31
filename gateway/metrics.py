@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     UPSTREAM_BASE_URL: str = "http://mock-upstream:9000"
     REDIS_URL: str = "redis://redis:6379/0"
-    ADMIN_API_KEY: str = "my-admin-key"
+    ADMIN_API_KEY: str = "demo-admin-key"
 
     DEFAULT_DAILY_LIMIT: int = 100_000
     DEFAULT_MONTHLY_LIMIT: int = 1_000_000
